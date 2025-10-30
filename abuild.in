@@ -1,4 +1,4 @@
-#!/bin/ash -e
+#!/bin/bash -e
 # vim: set filetype=sh:
 
 # abuild - build apk packages (light version of makepkg)
@@ -600,7 +600,7 @@ subpkg_set() {
 	subpkgarch=${_splitarch#*:}
 	if [ "$subpkgarch" = "$_splitarch" -o -z "$subpkgarch" ]; then
 		case "$subpkgname" in
-		*-doc | *-openrc | *-lang | *sh-completion | *-pyc) subpkgarch="noarch" ;;
+		*-doc | *-openrc | *-lang | *sh-completion) subpkgarch="noarch" ;;
 		*) subpkgarch="$pkgarch" ;;
 		esac
 	elif [ "$subpkgarch" = "all" ]; then
@@ -813,7 +813,7 @@ postcheck() {
 
 	# /usr merge
 	if ! options_has "!usrmerge"; then
-		for i in bin sbin lib; do
+		for i in bin sbin lib usr/sbin usr/libexec; do
 			if [ -L "$dir"/$i ] || [ -e "$dir"/$i ]; then
 				warning "Packages must not put anything under /$i, use /usr/${i##*s} instead"
 			fi
@@ -825,12 +825,6 @@ postcheck() {
 		find "$dir" -name '*.la' -type f -delete
 	fi
 
-	# look for /usr/lib/charset.alias
-	if [ -e "$dir"/usr/lib/charset.alias ] \
-			&& ! options_has "charset.alias"; then
-		error "Found /usr/lib/charset.alias"
-		e=1
-	fi
 	# look for /etc/init.d and /etc/conf.d
 	if [ -e "$dir"/etc/init.d -o -e "$dir"/etc/conf.d ] \
 			&& ! is_openrc_pkg "$name"; then
@@ -858,13 +852,6 @@ postcheck() {
 			echo "$i"
 			e=1
 		fi
-	fi
-	# look for pycache
-	# wildcard should always get the system python dir, and this is faster than
-	# trying to calculate the python version.
-	i="$(find "$dir"/usr/lib/python* \( -type d -a -name "__pycache__" \) 2>/dev/null || :)"
-	if [ -n "$i" ] && [ "${name%-pyc}" = "$name" ]; then
-		warning "Found __pycache__ but package name doesn't end with -pyc"
 	fi
 
 	# check that we don't have any files names with newline
@@ -898,20 +885,6 @@ postcheck() {
 			e=1
 		fi
 	fi
-	# test capabilities on executables
-	# see: https://gitlab.alpinelinux.org/alpine/tsc/-/issues/45
-	getcap -r "$dir" | (local r=true execothers; while read -r line; do
-		local filename="${line% *}"
-		if ! options_has "setcap"; then
-			error "Found binary with extra capabilities: $filename"
-			r=false
-		fi
-
-		execothers="$(find "$filename" -perm -o+x)"
-		if [ -n "$execothers" ]; then
-			warning "Found setcap binary executable by others: $filename"
-		fi
-	done; $r) || e=1
 
 	# test for textrels
 	if ! options_has "textrels"; then
@@ -1455,7 +1428,7 @@ real_so_path() {
 		[ -e "$1"/$so ] && realpath "$1/$so" && return 0
 		shift
 	done
-	error "$so: path not found"
+	error "$so: shared library not found"
 	return 1
 }
 
@@ -1472,22 +1445,51 @@ find_so_files() {
 }
 
 subpkg_provides_prefixed_so() {
-	[ -n "$sonameprefix" ] && grep -q -w "^$sonameprefix$1" \
-		"$pkgbasedir"/.control.*/.provides-so 2>/dev/null
+	if [ -n "$sonameprefix" ] && grep -q -w "^$sonameprefix$1" \
+		"$pkgbasedir"/.control.*/.provides-so 2>/dev/null; then
+		grep -l -H -w "^$sonameprefix$1" \
+			"$pkgbasedir"/.control.*/.provides-so 2>/dev/null |
+			sed -e "s:^$pkgbasedir/\.control\.::" -e "s:/\.provides-so::" |
+			tr -d '\n'
+		return 0
+	else
+		return 1
+	fi
 }
 
 subpkg_provides_so() {
-	grep -q -w "^$1" "$pkgbasedir"/.control.*/.provides-so 2>/dev/null
+	if grep -q -w "^$1" "$pkgbasedir"/.control.*/.provides-so 2>/dev/null; then
+		grep -l -H -w "^$1" "$pkgbasedir"/.control.*/.provides-so 2>/dev/null |
+			sed -e "s:^$pkgbasedir/\.control\.::" -e "s:/\.provides-so::" |
+			tr -d '\n'
+		return 0
+	else
+		return 1
+	fi
 }
 
 subpkg_provides_prefixed_pc() {
-	[ -n "$pcprefix" ] && grep -q -w "^$pcprefix$1" \
-		"$pkgbasedir"/.control.*/.provides-pc 2>/dev/null
+	if [ -n "$pcprefix" ] && grep -q -w "^$pcprefix$1" \
+		"$pkgbasedir"/.control.*/.provides-pc 2>/dev/null; then
+		grep -l -H -w "^$pcprefix$1" "$pkgbasedir"/.control.*/.provides-pc 2>/dev/null |
+ 			sed -e "s:^$pkgbasedir/\.control\.::" -e "s:/\.provides-pc::" |
+			tr -d '\n'
+		return 0
+	else
+		return 1
+	fi
 }
 
 subpkg_provides_pc() {
-	grep -q -w "^${1%%[<>=]*}" "$pkgbasedir"/.control.*/.provides-pc \
-		2>/dev/null
+	if grep -q -w "^${1%%[<>=]*}" "$pkgbasedir"/.control.*/.provides-pc \
+			2>/dev/null; then
+		grep -l -H -w "^${1%%[<>=]*}" "$pkgbasedir"/.control.*/.provides-pc |
+ 			sed -e "s:^$pkgbasedir/\.control\.::" -e "s:/\.provides-pc::" |
+			tr -d '\n'
+		return 0
+	else
+		return 1
+	fi
 }
 
 trace_apk_deps() {
@@ -1512,11 +1514,10 @@ trace_apk_deps() {
 		# first check if its provided by same apkbuild
 		grep -q -w "^$sonameprefix$i" "$dir"/.provides-so 2>/dev/null && continue
 
-		if subpkg_provides_prefixed_so "$i"; then
-			autodeps="$autodeps so:$sonameprefix$i"
-		elif subpkg_provides_so "$i" \
-				|| $APK $apkroot info --quiet -e "so:$i"; then
-			autodeps="$autodeps so:$i"
+		if subpkg_provides_prefixed_so "$i">/dev/null; then
+			warning "subpkg so dependency missing: $i in $(subpkg_provides_prefixed_so $i)"
+		elif subpkg_provides_so "$i">/dev/null; then
+			warning "subpkg so dependency missing: $i in $(subpkg_provides_so $i)"
 		else
 			missing="$missing $i"
 		fi
@@ -1525,19 +1526,19 @@ trace_apk_deps() {
 	# find all packages that holds the so files
 	if [ -f "$dir"/.rpaths ]; then
 		local so_files
-		so_files=$(find_so_files "$dir"/.rpaths $missing) \
-			|| return 1
+		if ! so_files=$(find_so_files "$dir"/.rpaths $missing); then
+			error "some so dependency is missing from the dependency list"
+			return 1
+		fi
 		if [ -n "$so_files" ]; then
 			deppkgs=$($APK $apkroot info --quiet --who-owns $so_files) || return 1
 		fi
 	fi
 
 	for found in $deppkgs; do
-		if grep -w "^depend = ${found}$" "$dir"/.PKGINFO >/dev/null ; then
-			warning "You can remove '$found' from depends"
-			continue
+		if ! grep -w "^depend = ${found}$" "$dir"/.PKGINFO >/dev/null ; then
+			warning "so dependency missing: $found"
 		fi
-		autodeps="$autodeps $found"
 	done
 
 	# symlink targets
@@ -1562,33 +1563,22 @@ trace_apk_deps() {
 		# first check if its provided by same apkbuild
 		grep -q -w "^$pcprefix$i" "$dir"/.provides-pc 2>/dev/null && continue
 
-		if subpkg_provides_prefixed_pc "$i"; then
+		if subpkg_provides_prefixed_pc "$i" >/dev/null; then
 			autodeps="$autodeps pc:$pcprefix$i"
-		elif subpkg_provides_pc "$i" \
-				|| $APK $apkroot info --quiet -e "pc:$i"; then
+			warning "subpkg pkg-config depdency missing: $i in $(subpkg_provides_prefixed_pc $i)"
+		elif subpkg_provides_pc "$i"; then
 			provider=$($APK $apkroot search --quiet --exact "pc:$i")
-			if list_has "$provider" $depends_dev; then
-				warning "$provider should be removed from depends_dev"
+			if ! list_has "$provider" $depends_dev; then
+				warning "subpkg pkg-config dependency missing: $i in $(subpkg_provides_pc $i)"
 			fi
-			autodeps="$autodeps pc:$i"
 		else
-			warning "Could not find any provider for pc:$i"
+			warning "pkg-config dependency missing: $i"
 		fi
 	done
 
 	echo "# automatically detected:" >> "$dir"/.PKGINFO
-	if [ -f "$dir"/.provides-so ]; then
-		sed 's/^\(.*\) \([0-9].*\)/provides = so:\1=\2/' \
-			"$dir"/.provides-so | sort -u \
-			>> "$dir"/.PKGINFO
-	fi
 	if [ -f "$dir"/.provides-pc ]; then
 		sed 's/^/provides = pc:/' "$dir"/.provides-pc | sort -u \
-			>> "$dir"/.PKGINFO
-	fi
-	if [ -f "$dir"/.provides-command ]; then
-		sed -e 's/^/provides = cmd:/' -e "s/\$/=$pkgver-r$pkgrel/" \
-			 "$dir"/.provides-command | sort -u \
 			>> "$dir"/.PKGINFO
 	fi
 	if [ -f "$dir"/.provides-py ]; then
@@ -2210,32 +2200,6 @@ fishcomp() {
 	default_fishcomp
 }
 
-default_pyc() {
-	pkgdesc="Precompiled Python bytecode for ${subpkgname%-pyc}"
-	install_if="${subpkgname%-pyc}=$pkgver-r$pkgrel pyc"
-
-	cd "$pkgdir" || return 0
-	local IFS=$'\n'
-	amove $(find usr/lib/python* -type d -name __pycache__)
-}
-
-pyc() {
-	default_pyc
-}
-
-default_nftrules() {
-	pkgdesc="$pkgdesc (nftables ruleset)"
-	install_if="nftables-rulesets ${subpkgname%-nftrules}=$pkgver-r$pkgrel"
-
-	if [ -d "$pkgdir"/usr/share/nftables.avail ]; then
-		amove 'usr/share/nftables.avail/*.nft'
-	fi
-}
-
-nftrules() {
-	default_nftrules
-}
-
 is_function() {
 	type "$1" 2>&1 | head -n 1 | grep -E -q "is a (shell )?function"
 }
@@ -2510,7 +2474,7 @@ rootbld_qemu_arch() {
 	case "$CBUILD_ARCH" in
 	arm*) qarch="arm" ;;
 	x86)  qarch="i386" ;;
-	*)    qarch="$CBUILD_ARCH" ;;
+	*)	qarch="$CBUILD_ARCH" ;;
 	esac
 
 	echo "${qarch}"
@@ -2935,7 +2899,7 @@ while getopts ":AcC:dD:fFhkKmnP:qrRs:uvV" opt; do
 	case $opt in
 		'A') echo "$CARCH"; exit 0;;
 		'c') enable_colors
-		     color_opt="-c";;
+			 color_opt="-c";;
 		'C') chdir "$OPTARG";;
 		'd') nodeps="-d";;
 		'D') DESCRIPTION=$OPTARG;;
@@ -2945,7 +2909,7 @@ while getopts ":AcC:dD:fFhkKmnP:qrRs:uvV" opt; do
 		'k') keep="-k";;
 		'K') keep_build="-K";;
 		'm') disable_colors
-		     color_opt="-m";;
+			 color_opt="-m";;
 		'n') die "Use newapkbuild to create new aports";;
 		'P') REPODEST=$OPTARG;;
 		'q') quiet="-q";;
@@ -3009,7 +2973,7 @@ export REPODEST SRCDEST
 
 # add dbg subpackage if its enabled globally
 if [ -n "$DEFAULT_DBG" ] && ! subpackage_types_has "dbg" && ! options_has "!dbg" && [ "$arch" != "noarch" ]; then
-        subpackages="$pkgname-dbg $subpackages"
+		subpackages="$pkgname-dbg $subpackages"
 fi
 
 # if we want build debug package
