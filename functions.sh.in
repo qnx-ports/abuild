@@ -6,29 +6,8 @@ program=${0##*/}
 
 arch_to_triplet() {
 	case "$1" in
-	aarch64)	echo "aarch64-alpine-linux-musl" ;;
-	aarch64_be)	echo "aarch64_be-alpine-linux-musl" ;;
-	armel)		echo "armv5-alpine-linux-musleabi" ;;
-	armhf)		echo "armv6-alpine-linux-musleabihf" ;;
-	armv7)		echo "armv7-alpine-linux-musleabihf" ;;
-	loongarch32)	echo "loongarch32-alpine-linux-musl" ;;
-	loongarchx32)	echo "loongarchx32-alpine-linux-musl" ;;
-	loongarch64)	echo "loongarch64-alpine-linux-musl" ;;
-	mips)           echo "mips-alpine-linux-musl" ;;
-	mips64)         echo "mips64-alpine-linux-musl" ;;
-	mipsel)         echo "mipsel-alpine-linux-musl" ;;
-	mips64el)       echo "mips64el-alpine-linux-musl" ;;
-	ppc)		echo "powerpc-alpine-linux-musl" ;;
-	ppc64)		echo "powerpc64-alpine-linux-musl" ;;
-	ppc64le)	echo "powerpc64le-alpine-linux-musl" ;;
-	riscv32)	echo "riscv32-alpine-linux-musl" ;;
-	riscv64)	echo "riscv64-alpine-linux-musl" ;;
-	s390x)		echo "s390x-alpine-linux-musl" ;;
-	sh2eb)		echo "sh2eb-alpine-linux-muslfdpic" ;;
-	sh3)		echo "sh3-alpine-linux-musl" ;;
-	sh4)		echo "sh4-alpine-linux-musl" ;;
-	x86)		echo "i586-alpine-linux-musl" ;;
-	x86_64)		echo "x86_64-alpine-linux-musl" ;;
+	aarch64)	echo "aarch64-unknown-nto-qnx8.0.0" ;;
+	x86_64)		echo "x86_64-pc-nto-qnx8.0.0" ;;
 	*)		echo "unknown" ;;
 	esac
 }
@@ -40,43 +19,10 @@ arch_to_hostspec() {
 
 triplet_to_arch() {
 	case "$1" in
-	aarch64-*-*-*)		echo "aarch64" ;;
-	aarch64_be-*-*-*)	echo "aarch64_be" ;;
-	arm*-*-*-*eabi)		echo "armel" ;;
-	armv6*-*-*-*eabihf)	echo "armhf" ;;
-	armv7*-*-*-*eabihf)	echo "armv7" ;;
-	i[0-9]86-*-*-*)		echo "x86" ;;
-	loongarch32-*-*-*)	echo "loongarch32" ;;
-	loongarchx32-*-*-*)	echo "loongarchx32" ;;
-	loongarch64-*-*-*)	echo "loongarch64" ;;
-	mips-*-*-*)             echo "mips" ;;
-	mips64-*-*-*)           echo "mips64" ;;
-	mipsel-*-*-*)           echo "mipsel" ;;
-	mips64el-*-*-*)         echo "mips64el" ;;
-	powerpc-*-*-*)		echo "ppc" ;;
-	powerpc64-*-*-*)	echo "ppc64" ;;
-	powerpc64le-*-*-*)	echo "ppc64le" ;;
-	riscv32-*-*-*)		echo "riscv32" ;;
-	riscv64-*-*-*)		echo "riscv64" ;;
-	s390x-*-*-*)		echo "s390x" ;;
-	sh2eb-*-*-*)		echo "sh2eb" ;;
-	sh3-*-*-*)		echo "sh3" ;;
-	sh4-*-*-*)		echo "sh4" ;;
+	aarch64*-*-*-*)		echo "aarch64" ;;
 	x86_64-*-*-*)		echo "x86_64" ;;
 	*)
 		echo "Couldn't determine arch from triplet: $1" >&2
-		exit 1
-		;;
-	esac
-}
-
-triplet_to_libc() {
-	case "$1" in
-	*-*-*-uclibc*)	echo "uclibc" ;;
-	*-*-*-musl*)	echo "musl" ;;
-	*-*-*-gnu*)	echo "glibc" ;;
-	*)
-		echo "Couldn't determine libc from triplet: $1" >&2
 		exit 1
 		;;
 	esac
@@ -187,10 +133,8 @@ readconfig() {
 	fi
 
 	[ -z "$CARCH" ] && CARCH="$(triplet_to_arch $CHOST)"
-	[ -z "$CLIBC" ] && CLIBC="$(triplet_to_libc $CHOST)"
 	[ -z "$CBUILD_ARCH" ] && CBUILD_ARCH="$(triplet_to_arch $CBUILD)"
 	[ -z "$CTARGET_ARCH" ] && CTARGET_ARCH="$(triplet_to_arch $CTARGET)"
-	[ -z "$CTARGET_LIBC" ] && CTARGET_LIBC="$(triplet_to_libc $CTARGET)"
 
 	if [ "$CHOST" != "$CTARGET" ]; then
 		# setup environment for creating cross compiler

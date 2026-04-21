@@ -23,11 +23,11 @@
 #endif
 
 static const char* valid_cmds[] = {
-	"/bin/adduser",
-	"/usr/sbin/adduser",
-	"/bin/addgroup",
-	"/usr/sbin/addgroup",
-	"/sbin/apk",
+	"/usr/bin/adduser",
+	"/usr/bin/adduser",
+	"/usr/bin/addgroup",
+	"/usr/bin/addgroup",
+	"/usr/bin/apk",
 	"/usr/bin/abuild-rmtemp",
 	NULL
 };
