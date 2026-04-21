@@ -542,7 +542,7 @@ default_unpack() {
 				tar -C "$srcdir" --zstd -xf "$s" || return 1;;
 			*.zip)
 				msg "Unpacking $s..."
-				unzip -n -q "$s" -d "$srcdir" || return 1;;
+				unzip -n -q -d "$srcdir" "$s" || return 1;;
 		esac
 	done
 }
