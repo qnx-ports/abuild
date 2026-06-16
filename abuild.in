@@ -2644,6 +2644,7 @@ rootbld() {
 	qubblewrap \
 		--chroot "$BUILD_ROOT" \
 		--bind /dev /dev \
+		--bind /proc /proc \
 		$qubblewrap_env \
 		--command /usr/bin/busybox --install -s /usr/bin
 
