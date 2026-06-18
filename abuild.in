@@ -2627,6 +2627,7 @@ rootbld() {
 	}'
 
 	qubblewrap_env="
+		--clearenv
 		--env CARCH "$CARCH"
 		--env HOME "$HOME"
 		--env REPODEST "$REPODEST"
