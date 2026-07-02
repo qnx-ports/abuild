@@ -51,6 +51,35 @@ do_sign() {
 	done
 }
 
+do_clear() {
+	local f i keyname repo
+
+	# we are actually only interested in the name, not the file itself
+	keyname=${pubkey##*/}
+
+	for f; do
+		i=$(readlink -f $f)
+		[ -d "$i" ] && i="$i/APKINDEX.tar.gz"
+		repo="${i%/*}"
+		trap 'die "failed to sign $i"' EXIT
+		set -e
+		cd "$repo"
+
+		if [ -n "$SOURCE_DATE_EPOCH" ]; then
+			touch -h -d "@$SOURCE_DATE_EPOCH" "$sig"
+		fi
+
+		tmptargz=$(mktemp)
+		# Quiet the APK-TOOLs.checksum.SHA1 header
+		gunzip -c "$i" | tar --delete --wildcards ".SIGN.*" --warning=no-unknown-keyword | abuild-tar --cut | $gzip -n -9 > "$tmptargz"
+		chmod 644 "$tmptargz"
+		mv "$tmptargz" "$i"
+		msg "Cleared signatures in $i"
+		set +e
+		trap - EXIT
+	done
+}
+
 usage() {
 	cat <<-__EOF__
 		$program $program_version - sign indexes
@@ -58,6 +87,7 @@ usage() {
 		       $program -e
 		Options:
 		  -e, --installed    Check only of there exist a private key for signing
+		  -c, --clear        Clear the previous signatures
 		  -k, --private KEY  The private key to use for signing
 		  -p, --public KEY   The name of public key. apk add will look for
 		                     /etc/apk/keys/KEY
@@ -69,11 +99,12 @@ usage() {
 }
 
 check_installed=false
+clear_signatures=false
 privkey="$PACKAGER_PRIVKEY"
 pubkey=
 quiet=
 
-args=$(getopt -o ek:p:t:qh --long installed,private:,public:,type:,quiet,help -n "$program" -- "$@")
+args=$(getopt -o eck:p:t:qh --long installed,clear,private:,public:,type:,quiet,help -n "$program" -- "$@")
 if [ $? -ne 0 ]; then
 	usage >&2
 	exit 2
@@ -82,6 +113,7 @@ eval set -- "$args"
 while true; do
 	case $1 in
 		-e|--installed) check_installed=true;;
+		-c|--clear) clear_signatures=true;;
 		-k|--private) privkey=$2; shift;;
 		-p|--public) pubkey=$2; shift;;
 		-t|--type) sigtype=$2; shift;;
@@ -136,5 +168,8 @@ if $check_installed; then
 		exit 1
 	fi
 else
+	if $clear_signatures; then
+		do_clear "$@"
+	fi
 	do_sign "$@"
 fi
