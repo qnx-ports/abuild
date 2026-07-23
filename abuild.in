@@ -2575,6 +2575,9 @@ rootbld() {
 		"$BUILD_ROOT/tmp/tmp" "$BUILD_ROOT/usr/bin" \
 		"$REPODEST" "$SRCDEST" "$BUILD_ROOT/$HOME/.ccache"
 	ln -s usr/{bin,include,lib} "$BUILD_ROOT"/
+	# Need to exist before we call APK because some triggers might need it (ex: dev/null)
+	/ifs/usr/bin/toybox ln -sPf /dev "$BUILD_ROOT"/dev
+	/ifs/usr/bin/toybox ln -sPf /proc "$BUILD_ROOT"/proc
 
 	# Copy files over
 	for host_file in "$aportsgit" /etc/apk/keys/* /etc/apk/repositories "$REPODEST" "$SRCDEST" "$ABUILD_USERDIR" /usr/lib/libchrootfix.so /etc/passwd /etc/group; do
@@ -2592,11 +2595,18 @@ rootbld() {
 
 	calcdeps
 
-	$SUDO_APK add --initdb --update \
+	# Install core system first to fix possible post-install triggers requiring runtime linking (cough cough busybox)
+	$APK add --initdb --update --usermode \
 		--arch $CBUILD_ARCH \
 		--root "$BUILD_ROOT" \
 		${cachedir:+--cache-dir $cachedir} \
-		abuild qnx-microkernel qnx-gcc-libs qnx-packaging tar sed bash diffutils $hostdeps $builddeps
+		qnx-microkernel qnx-gcc-libs
+
+	$APK add --initdb --update --usermode \
+		--arch $CBUILD_ARCH \
+		--root "$BUILD_ROOT" \
+		${cachedir:+--cache-dir $cachedir} \
+		abuild qnx-packaging tar sed bash diffutils $hostdeps $builddeps
 
 
 	# busybox adduser/addgroup check if uid is 0 so we need to generate the files manually
@@ -2628,6 +2638,8 @@ rootbld() {
 
 	qubblewrap_env="
 		--clearenv
+		--uid $(id -u)
+		--gid $(id -g)
 		--env CARCH "$CARCH"
 		--env HOME "$HOME"
 		--env REPODEST "$REPODEST"
@@ -2640,14 +2652,6 @@ rootbld() {
 		--env LD_PRELOAD /usr/lib/libchrootfix.so
 		--env LD_LIBRARY_PATH /proc/boot:/usr/local/lib:/usr/lib:/usr/lib/dll
 	"
-
-	# fix busybox
-	qubblewrap \
-		--chroot "$BUILD_ROOT" \
-		--bind /dev /dev \
-		--bind /proc /proc \
-		$qubblewrap_env \
-		--command /usr/bin/busybox --install -s /usr/bin
 
 	qubblewrap \
 		--chroot "$BUILD_ROOT" \
