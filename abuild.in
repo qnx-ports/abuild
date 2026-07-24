@@ -2600,7 +2600,7 @@ rootbld() {
 		--arch $CBUILD_ARCH \
 		--root "$BUILD_ROOT" \
 		${cachedir:+--cache-dir $cachedir} \
-		qnx-microkernel qnx-gcc-libs
+		qnx-microkernel qnx-gcc-libs filesystem
 
 	$APK add --initdb --update --usermode \
 		--arch $CBUILD_ARCH \
