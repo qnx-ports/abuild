@@ -8,7 +8,7 @@ sharedir		?= $(prefix)/share/$(PACKAGE)
 zshdir		?= $(prefix)/share/zsh/site-functions
 mandir		?= $(prefix)/share/man
 
-SCRIPTS		:= abuild abuild-keygen abuild-sign newapkbuild \
+SCRIPTS		:= abuild abuild-keygen abuild-sign abuild-resign newapkbuild \
 		   abump apkgrel buildlab apkbuild-cpan apkbuild-pypi checkapk \
 		   apkbuild-gem-resolver
 USR_BIN_FILES	:= $(SCRIPTS) abuild-tar abuild-gzsplit abuild-sudo abuild-fetch abuild-rmtemp
