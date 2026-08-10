@@ -1578,12 +1578,12 @@ trace_apk_deps() {
 	fi
 
 	# symlink targets
-	for i in $(sort -u "$dir"/.symlinks-needs 2>/dev/null); do
+	for i in $(sort -u "$dir"/.needs-symlinks 2>/dev/null); do
 		autodeps="$autodeps $i"
 	done
 
 	# python3 dependencies
-	for i in $(sort -u "$dir"/.python3-needs 2>/dev/null); do
+	for i in $(sort -u "$dir"/.needs-python3 2>/dev/null); do
 		autodeps="$autodeps $i"
 	done
 
