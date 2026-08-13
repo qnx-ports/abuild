@@ -2632,7 +2632,7 @@ rootbld() {
 			users[$1] = $0
 
 		for (i in groups)
-			printf("%s\n", groups[i]) > (root "/group")
+			printf("%s\n", groups[i]) > (root "/etc/group")
 		for (i in users)
 			printf("%s\n", users[i]) > (root "/etc/passwd")
 	}'
