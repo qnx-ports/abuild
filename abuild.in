@@ -2591,6 +2591,7 @@ rootbld() {
 
 	if options_has "net"; then
 		cp /etc/resolv.conf "$BUILD_ROOT/etc"
+		echo "127.0.0.1    localhost" >> "$BUILD_ROOT/etc/hosts"
 	fi
 
 	calcdeps
