@@ -149,8 +149,9 @@ cleanup() {
 		case $i in
 		bldroot)
 			if [ "$BUILD_ROOT" ]; then
+				# TODO reenable
 				msg "Cleaning up build chroot"
-				abuild-rmtemp "$BUILD_ROOT"
+				# abuild-rmtemp "$BUILD_ROOT"
 			fi;;
 		pkgdir) msg "Cleaning up pkgdir"; rm -rf "$pkgbasedir";;
 		srcdir) msg "Cleaning up srcdir"; cleanup_srcdir;;
@@ -2540,20 +2541,14 @@ rootbld() {
 		return
 	fi
 
-	$APK info -eq abuild-rootbld || die "rootbld: abuild-rootbld package not installed"
+	# $APK info -eq abuild-rootbld || die "rootbld: abuild-rootbld package not installed"
 
 	[ $CBUILD = $CHOST ] || die "rootbld: set CBUILD=$CHOST to build for $CHOST"
 
 	local qarch cachedir=""
 	[ -d /etc/apk/cache ] && cachedir=/etc/apk/cache
 	if ! [ $CBUILD_ARCH = "$($APK --print-arch)" ]; then
-		# cross-building, so check for binfmt registration
-		qarch="$(rootbld_qemu_arch)"
-		if ! [ -f "/proc/sys/fs/binfmt_misc/qemu-$qarch" ]; then
-			warning "rootbld: binfmt registration missing for $qarch binaries"
-		fi
-		# Old versions of apk have cache conflicts
-		$APK info -eq 'cmd:apk>=2.14.1' || cachedir=""
+		error "Cross compiling is not supported"
 	fi
 
 	logcmd "chroot building building $repo/$pkgname-$pkgver-r$pkgrel"
@@ -2570,70 +2565,53 @@ rootbld() {
 	fetch
 
 	msg "Preparing build chroot..."
+	BUILD_ROOT=$(mktemp -d /var/tmp/.abuild.XXXXXXXXXX)
 
-	BUILD_ROOT=$(mktemp -d /var/tmp/abuild.XXXXXXXXXX)
-
-	mkdir -p "$BUILD_ROOT/proc" "$BUILD_ROOT/etc/apk/keys" \
+	mkdir -p  "$BUILD_ROOT"/usr/{lib,bin,include} \
+		"$BUILD_ROOT/etc/apk/keys" \
 		"$BUILD_ROOT/$ABUILD_USERDIR" "$BUILD_ROOT/$aportsgit" \
 		"$BUILD_ROOT/$SRCDEST" "$BUILD_ROOT/$REPODEST" \
 		"$BUILD_ROOT/tmp/pkg" "$BUILD_ROOT/tmp/src" \
 		"$BUILD_ROOT/tmp/tmp" "$BUILD_ROOT/usr/bin" \
 		"$REPODEST" "$SRCDEST" "$BUILD_ROOT/$HOME/.ccache"
+	ln -s usr/{bin,include,lib} "$BUILD_ROOT"/
+	# Need to exist before we call APK because some triggers might need it (ex: dev/null)
+	/ifs/usr/bin/toybox ln -sPf /dev "$BUILD_ROOT"/dev
+	/ifs/usr/bin/toybox ln -sPf /proc "$BUILD_ROOT"/proc
 
-	# Avoid exporting {src,pkgbase,tmp}dir
-	cat - /etc/abuild.conf <<-EOF > "$BUILD_ROOT"/etc/abuild.conf
-		srcdir=/tmp/src
-		pkgbasedir=/tmp/pkg
-		tmpdir=/tmp/tmp
-
-	EOF
-
-	local dir
-	for dir in /usr/share/apk/keys/$CBUILD_ARCH /etc/apk/keys; do
-		cp $dir/* "$BUILD_ROOT/etc/apk/keys"
+	# Copy files over
+	for host_file in "$aportsgit" /etc/apk/keys/* /etc/apk/repositories "$REPODEST" "$SRCDEST" "$ABUILD_USERDIR" /usr/lib/libchrootfix.so /etc/passwd /etc/group; do
+		if [[ -d "$host_file" ]] && [[ -d "$BUILD_ROOT/$host_file" ]]; then
+			# copy dir content instead of the dir
+			cp -r "$host_file/." "$BUILD_ROOT/$host_file"
+		else
+			cp -r "$host_file" "$BUILD_ROOT/$host_file"
+		fi
 	done
 
 	if options_has "net"; then
 		cp /etc/resolv.conf "$BUILD_ROOT/etc"
+		echo "127.0.0.1    localhost" >> "$BUILD_ROOT/etc/hosts"
 	fi
-
-	local version="edge" buildhost="edge" gitref
-	if gitref="$(expr "$($git symbolic-ref --short HEAD)" : '\([0-9]\+\(\.[0-9]\+\)*\)-')"; then
-		version=v${gitref}
-		buildhost=${gitref/./-}
-	fi
-
-	[ -s "$repo_template" ] || die "rootbld: $repo_template does not exist"
-	(
-		for key in $($git config --list --name-only); do
-			k=${key#abuild.}
-			[ $k != $key ] && \
-				eval "export $k=\"$($git config --get $key)\""
-		done
-
-		export mirror version
-		[ "$mirror" ] || mirror=http://dl-cdn.alpinelinux.org/alpine
-
-		envsubst | while read -r repository; do
-			echo "$repository"
-			echo "$REPODEST/${repository##*/}"
-		done
-	) < "$repo_template" > "$BUILD_ROOT/etc/apk/repositories"
 
 	calcdeps
 
-	if [ "$BOOTSTRAP_USR_MERGED" = "1" ]; then
-		mkdir -p "$BUILD_ROOT"/usr/lib "$BUILD_ROOT"/usr/bin "$BUILD_ROOT"/usr/sbin
-		ln -s usr/bin usr/sbin usr/lib "$BUILD_ROOT"/
-	fi
-
-	$SUDO_APK add --initdb --update \
+	# Install core system first to fix possible post-install triggers requiring runtime linking (cough cough busybox)
+	$APK add --initdb --update --usermode \
 		--arch $CBUILD_ARCH \
 		--root "$BUILD_ROOT" \
 		${cachedir:+--cache-dir $cachedir} \
-		abuild alpine-base $hostdeps $builddeps
+		qnx-microkernel qnx-gcc-libs filesystem
+
+	$APK add --initdb --update --usermode \
+		--arch $CBUILD_ARCH \
+		--root "$BUILD_ROOT" \
+		${cachedir:+--cache-dir $cachedir} \
+		abuild qnx-packaging tar sed bash diffutils $hostdeps $builddeps
+
 
 	# busybox adduser/addgroup check if uid is 0 so we need to generate the files manually
+	# If it halts here, make sure that /etc/{group,passwd} exist
 	awk -F: -v pkggroups="$pkggroups" -v pkgusers="$pkgusers" -v root="$BUILD_ROOT" -v home="$HOME" 'BEGIN {
 		gid = 101;
 		split(pkggroups, arr, "[ \t\n]")
@@ -2654,45 +2632,37 @@ rootbld() {
 			users[$1] = $0
 
 		for (i in groups)
-			printf("%s\n", groups[i]) > (root "/group")
+			printf("%s\n", groups[i]) > (root "/etc/group")
 		for (i in users)
-			printf("%s\n", users[i]) > (root "/passwd")
+			printf("%s\n", users[i]) > (root "/etc/passwd")
 	}'
 
-	local bwrap_opts=""
-	options_has "net" || bwrap_opts="$bwrap_opts --unshare-net"
-	bwrap --new-session --unshare-ipc --unshare-uts $bwrap_opts \
-		--unshare-pid --die-with-parent \
-		--uid 1000 --gid 1000 \
-		--ro-bind "$BUILD_ROOT" / \
-		--ro-bind "$BUILD_ROOT"/group /etc/group \
-		--ro-bind "$BUILD_ROOT"/passwd /etc/passwd \
-		--proc /proc \
-		--dev-bind /dev /dev \
-		--bind "$BUILD_ROOT/$HOME" "$HOME" \
-		--ro-bind "$ABUILD_USERDIR" "$ABUILD_USERDIR" \
-		--ro-bind "$aportsgit" "$aportsgit" \
-		${USE_CCACHE:+ --bind "${CCACHE_DIR:-$HOME/.ccache}" "$HOME/.ccache"} \
-		--bind "$SRCDEST" "$SRCDEST" \
-		--bind "$BUILD_ROOT/tmp" /tmp \
-		--bind "$BUILD_ROOT/var/tmp" /var/tmp \
-		--bind "$REPODEST" "$REPODEST" \
-		--hostname "build-$buildhost-$CARCH" \
+	qubblewrap_env="
+		--clearenv
+		--uid $(id -u)
+		--gid $(id -g)
+		--env CARCH "$CARCH"
+		--env HOME "$HOME"
+		--env REPODEST "$REPODEST"
+		--env SRCDEST "$SRCDEST"
+		--env ABUILD_USERDIR "$ABUILD_USERDIR"
+		--env SOURCE_DATE_EPOCH "$SOURCE_DATE_EPOCH"
+		--env ABUILD_LAST_COMMIT "$ABUILD_LAST_COMMIT"
+		--env PATH /usr/bin
+		--env FAKEROOTDONTTRYCHOWN 1
+		--env LD_PRELOAD /usr/lib/libchrootfix.so
+		--env LD_LIBRARY_PATH /proc/boot:/usr/local/lib:/usr/lib:/usr/lib/dll
+	"
+
+	qubblewrap \
+		--chroot "$BUILD_ROOT" \
 		--chdir "$startdir" \
-		--clearenv \
-		--setenv CARCH "$CARCH" \
-		--setenv HOME "$HOME" \
-		--setenv REPODEST "$REPODEST" \
-		--setenv SRCDEST "$SRCDEST" \
-		--setenv ABUILD_USERDIR "$ABUILD_USERDIR" \
-		${ABUILD_BOOTSTRAP:+--setenv ABUILD_BOOTSTRAP "$ABUILD_BOOTSTRAP"} \
-		${APORTS_BOOTSTRAP:+--setenv APORTS_BOOTSTRAP "$APORTS_BOOTSTRAP"} \
-		--setenv SOURCE_DATE_EPOCH "$SOURCE_DATE_EPOCH" \
-		--setenv ABUILD_LAST_COMMIT "$ABUILD_LAST_COMMIT" \
-		--setenv PATH ${USE_CCACHE:+/usr/lib/ccache/bin:}/bin:/usr/bin:/sbin:/usr/sbin \
-		--setenv FAKEROOTDONTTRYCHOWN 1 \
-		--unsetenv CBUILD \
-		/usr/bin/abuild $force $verbose rootbld_actions
+		$qubblewrap_env \
+		--command /usr/bin/abuild $force $verbose rootbld_actions
+
+	# Extract the archives from the chroot
+	cp -r "$BUILD_ROOT/$REPODEST/." "$REPODEST"
+
 	update_abuildrepo_index
 	cleanup $CLEANUP
 }
