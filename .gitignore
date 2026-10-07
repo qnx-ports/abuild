@@ -9,6 +9,7 @@ abuild-gzsplit
 abuild-keygen
 abuild-rmtemp
 abuild-sign
+abuild-resign
 abuild-sudo
 abuild-tar
 abuild.conf
