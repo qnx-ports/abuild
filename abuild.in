@@ -2576,7 +2576,7 @@ rootbld() {
 		"$BUILD_ROOT/tmp/pkg" "$BUILD_ROOT/tmp/src" \
 		"$BUILD_ROOT/tmp/tmp" "$BUILD_ROOT/usr/bin" \
 		"$REPODEST" "$SRCDEST" "$BUILD_ROOT/$HOME/.ccache"
-	ln -s usr/{bin,include,lib} "$BUILD_ROOT"/
+	ln -s usr/{bin,lib} "$BUILD_ROOT"/
 	# Need to exist before we call APK because some triggers might need it (ex: dev/null)
 	/ifs/usr/bin/toybox ln -sPf /dev "$BUILD_ROOT"/dev
 	/ifs/usr/bin/toybox ln -sPf /proc "$BUILD_ROOT"/proc
