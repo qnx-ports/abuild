@@ -1903,8 +1903,7 @@ create_apks() {
 
 			# explicitly sort package content
 			find "$@" -print0
-		fi | LC_ALL=C sort -z | apk_tar -T - --xattrs \
-			--xattrs-exclude=security.selinux \
+		fi | LC_ALL=C sort -z | apk_tar -T - \
 			--owner-map="$pkgbasedir"/.owner-map \
 			--group-map="$pkgbasedir"/.group-map \
 			| abuild-tar --hash | $gzip -n -9 >"$dir"/data.tar.gz
