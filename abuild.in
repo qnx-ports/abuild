@@ -1454,6 +1454,7 @@ prepare_package() {
 	[ ! -d "${subpkgdir:-$pkgdir}" ] && die "Missing ${subpkgname:+sub}pkgdir for ${subpkgname:-$pkgname}"
 	msg "Preparing ${subpkgname:+sub}package ${subpkgname:-$pkgname}..."
 	stripbin
+	add_use_info
 	prepare_metafiles
 	prepare_trace_rpaths
 	prepare_symlinks
@@ -2749,6 +2750,49 @@ stripbin() {
 	done
 	rmdir "$pkgbasedir/.strip-tmp"
 }
+
+add_use_info() {
+	if options_has "!useinfo"; then
+		return 0
+	fi
+
+	cd "${subpkgdir:-$pkgdir}"
+
+	local name=${subpkgname:-$pkgname}
+	local pkg="$name=$pkgver-r$pkgrel"
+	if [ -z "$ABUILD_LAST_COMMIT" ]; then
+		ABUILD_LAST_COMMIT="$(git_last_commit)$(git_dirty)"
+	fi
+	# DO NOT EMBED DATES, it makes packages completely unreproducible
+
+	# based on stripbin loop
+	scanelf --recursive --nobanner --osabi --etype "ET_DYN,ET_EXEC" . \
+		| while read type osabi filename; do
+		# scanelf may have picked up a temp file so verify that file still exists
+		[ -e "$filename" ] || continue
+
+		case "$filename" in
+			./usr/lib/debug/*) continue ;;
+		esac
+
+		binname=$(basename "$filename")
+		useinfo_f=<(cat <<-EOF
+				NAME=$binname
+				DESCRIPTION=$pkgdesc
+				STATE=lookup
+				GIT_SHA=$ABUILD_LAST_COMMIT
+				PACKAGE=$pkg
+				ORIGIN=$pkgname
+			EOF
+		)
+
+		objcopy --add-section QNX_info="$useinfo_f" \
+			--set-section-flags QNX_info=noload,readonly \
+			"$filename" "$filename"
+	done
+
+}
+
 
 # simply list target apks
 listpkg() {
